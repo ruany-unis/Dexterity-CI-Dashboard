@@ -1,208 +1,217 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<meta name="theme-color" content="#0E2438" />
-<meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<title>Aurora · DEX Log</title>
-<link rel="manifest" href="manifest.json" />
-<link rel="apple-touch-icon" href="icon.svg" />
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#42B4D6" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Aurora DEX" />
+  <title>Project Aurora · DEX Assistant</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-<header class="app-header">
-  <div class="brand">
-    <div class="beam"></div>
-    <div>
-      <h1>AURORA</h1>
-      <div class="sub">DEX LOG</div>
+  <div id="toast" class="toast" aria-live="polite"></div>
+
+  <section id="portal" class="portal-screen">
+    <div class="portal-hero">
+      <img src="assets/maersk-portal.png" alt="Maersk" class="portal-logo" />
+      <h1>Project Aurora</h1>
+      <p>DEX operational assistant</p>
     </div>
-  </div>
-  <div class="head-right">
-    <button id="installBtn" class="ghost hidden" type="button">Install</button>
-    <div class="obs">OBSERVATIONS<b id="hCount">0</b></div>
-  </div>
-</header>
-
-<main>
-  <!-- ============ DASHBOARD ============ -->
-  <section id="view-dashboard" class="view active">
-    <div class="eyebrow">Executive view</div>
-    <div id="forkMessage" class="banner"></div>
-    <div class="statgrid" id="kpiGrid"></div>
-
-    <div class="eyebrow">Baseline vs After</div>
-    <div class="card">
-      <table id="beforeAfterTable" class="cmp"></table>
-      <div class="tiny">Green = moved the right way. For losses, lower After is better. Trust the comparison only when After n ≥ 2.</div>
-    </div>
-
-    <div class="eyebrow">Say it carefully</div>
-    <div class="card caution">
-      <p><b>One window isn't a trend.</b> The 6/10 baseline is a single observation. Don't present a delta until After n ≥ 2.</p>
-      <p><b>Break ≠ downtime.</b> A 25-min post-break stop with a 15-min planned break = a 10-min restart overrun, not 25 lost.</p>
-      <p><b>"min/hr" is normalized,</b> not raw minutes. It scales loss to available production time so windows compare fairly.</p>
-      <p><b>Speed claim:</b> only the log's own cases/min. Never cases ÷ pick-time — that overstates the real rate.</p>
-    </div>
-  </section>
-
-  <!-- ============ ADD ============ -->
-  <section id="view-entry" class="view">
-    <div class="eyebrow" id="entryTitle">New observation</div>
-
-    <div class="card">
-      <div class="row2">
-        <label class="lab">Date<input id="date" type="date" required></label>
-        <label class="lab">Shift
-          <div class="seg" id="shiftSeg">
-            <button type="button" data-v="Shift 1" class="on">1st</button>
-            <button type="button" data-v="Shift 2">2nd</button>
-          </div>
-        </label>
-      </div>
-      <label class="lab" style="margin-top:12px">Period — before or after the changes?
-        <div class="seg period" id="periodSeg">
-          <button type="button" data-v="Baseline">Baseline</button>
-          <button type="button" data-v="After" class="on">After</button>
+    <div class="login-card">
+      <div class="card-head">
+        <span class="card-icon">✦</span>
+        <div>
+          <h2>Start your session</h2>
+          <p>Enter your name and role to see the right tools.</p>
         </div>
+      </div>
+      <label class="field-label">Name
+        <input id="loginName" type="text" autocomplete="name" placeholder="Enter name" />
       </label>
-    </div>
-
-    <div class="eyebrow">The window</div>
-    <div class="card">
-      <div class="row2">
-        <label class="lab">Total window <span class="opt">min</span><input id="totalWindowMin" inputmode="decimal" type="number" step="0.01" min="0" class="mono" placeholder="e.g. 60"></label>
-        <label class="lab">Planned break <span class="opt">min</span><input id="plannedBreakMin" inputmode="decimal" type="number" step="0.01" min="0" class="mono" placeholder="e.g. 15"></label>
-      </div>
-      <div class="chip">Available production time <b id="availChip">— min</b></div>
-    </div>
-
-    <div class="eyebrow">Output</div>
-    <div class="card">
-      <div class="row2">
-        <label class="lab">Cases picked<input id="cases" inputmode="numeric" type="number" step="1" min="0" class="mono" placeholder="0"></label>
-        <label class="lab">Pallets done<input id="pallets" inputmode="numeric" type="number" step="1" min="0" class="mono" placeholder="0"></label>
-      </div>
-      <label class="lab" style="margin-top:12px">Observed cases/min from the log <span class="opt">— optional</span>
-        <input id="activeRateCpm" inputmode="decimal" type="number" step="0.01" min="0" class="mono" placeholder="leave blank if not on the log">
+      <label class="field-label">Role
+        <select id="loginRole">
+          <option>Warehouse Associate</option>
+          <option>Warehouse Lead</option>
+          <option>Manager / Supervisor</option>
+          <option>Admin</option>
+        </select>
       </label>
-      <div class="tiny">Enter the log's own average if it has one. We never back it out of cases ÷ pick-time — that overstates the rate.</div>
-    </div>
-
-    <div class="eyebrow">Where the available time went</div>
-    <div class="card">
-      <div class="tiny" style="margin-bottom:6px">Split available minutes into one bucket each — no double counting. The meter shows when it balances.</div>
-      <div id="alloc"></div>
-    </div>
-
-    <div class="card">
-      <div class="meter-wrap">
-        <div class="meter-head"><span class="ttl">Reconcile</span><span class="val" id="mVal">0 / 0 min</span></div>
-        <div class="meter" id="meter"><div class="fill" id="mFill"></div></div>
-        <div class="recon-msg" id="mMsg"><span class="dot" style="background:#b6c2cd"></span>Enter the window above to begin.</div>
-      </div>
-    </div>
-
-    <label class="lab">Notes <span class="opt">— what happened, log source, associate</span>
-      <textarea id="notes" rows="3" placeholder="e.g. carton overhang on pallet 7; restart slow after lunch"></textarea>
-    </label>
-
-    <button type="button" id="saveBtn" class="btn btn-primary" disabled>Save observation</button>
-    <button type="button" id="cancelBtn" class="btn btn-ghost hidden" style="margin-top:10px">Cancel edit</button>
-    <div style="height:10px"></div>
-  </section>
-
-  <!-- ============ LOGS ============ -->
-  <section id="view-logs" class="view">
-    <div class="eyebrow">Logged observations</div>
-    <div id="logsBody"></div>
-  </section>
-
-  <!-- ============ PARETO ============ -->
-  <section id="view-pareto" class="view">
-    <div class="eyebrow">Where the time is lost</div>
-    <div class="seg period" id="paretoSeg" style="margin-bottom:6px">
-      <button type="button" data-v="Baseline">Baseline</button>
-      <button type="button" data-v="After" class="on">After</button>
-    </div>
-    <div class="card"><div id="paretoChart" class="par"></div>
-      <div class="tiny">Normalized: minutes lost per available hour. The top bar is your constraint.</div>
+      <label id="adminPwWrap" class="field-label hidden">Admin password
+        <input id="adminPassword" type="password" placeholder="Required for Admin" />
+      </label>
+      <button id="loginBtn" class="primary big">Enter Aurora</button>
+      <p class="micro warning-note">Demo security only. For production, move Admin access to a secure authentication system.</p>
     </div>
   </section>
 
-  <!-- ============ SAVINGS ============ -->
-  <section id="view-savings" class="view">
-    <div class="eyebrow">Finance check</div>
-    <div class="card">
-      <p class="muted small">Classify honestly. Hard savings = labor removed, OT reduced, or budgeted hours avoided. Otherwise it's soft capacity / productivity gain.</p>
-      <label class="lab">Hourly labor rate <span class="opt">$ loaded</span><input id="laborRate" inputmode="decimal" type="number" step="0.01" min="0" class="mono" placeholder="e.g. 33.00"></label>
-      <label class="lab" style="margin-top:12px">Verified hours saved per week<input id="hoursSavedWeek" inputmode="decimal" type="number" step="0.01" min="0" class="mono" placeholder="0"></label>
-      <div class="row2" style="margin-top:12px">
-        <label class="lab">Weeks / year<input id="weeksYear" inputmode="numeric" type="number" step="1" min="0" class="mono" value="52"></label>
-        <label class="lab">Savings type
-          <select id="savingsType">
-            <option>Soft capacity / productivity gain</option>
-            <option>Hard savings – labor removed</option>
-            <option>Hard savings – OT reduced</option>
-            <option>Cost avoidance</option>
-          </select>
-        </label>
+  <section id="app" class="app hidden">
+    <header class="app-header">
+      <div class="brand-wrap">
+        <div class="star-mark">✦</div>
+        <div>
+          <h1>Project Aurora</h1>
+          <p>Dexterity / DEX Assistant</p>
+        </div>
       </div>
-      <button type="button" id="saveSavingsBtn" class="btn btn-primary" style="margin-top:14px">Save savings inputs</button>
-      <div id="savingsOutput" class="savings-output"></div>
-    </div>
+      <div class="user-chip">
+        <span id="userInitials">--</span>
+        <div><b id="userNameTop">User</b><small id="userRoleTop">Role</small></div>
+      </div>
+    </header>
+
+    <main>
+      <section id="view-home" class="view active">
+        <div class="hero-card">
+          <div class="hero-copy">
+            <span class="eyebrow">Daily flow</span>
+            <h2>What do you need to do?</h2>
+            <p>Pick one tile. Aurora will guide you step by step.</p>
+          </div>
+          <img src="assets/dex-robot.jpg" alt="Dexterity robot" />
+        </div>
+        <div id="roleMessage" class="role-message"></div>
+        <div id="tileGrid" class="tile-grid"></div>
+      </section>
+
+      <section id="view-entry" class="view">
+        <div class="section-bar">
+          <button class="back-btn" data-go="home">← Home</button>
+          <div><span class="eyebrow">Guided log</span><h2>DEX Observation</h2></div>
+        </div>
+        <div class="step-card">
+          <div class="step-title"><span>1</span><h3>Who / when?</h3></div>
+          <div class="quick-grid two">
+            <label class="field-label">Date<input id="logDate" type="date" /></label>
+            <label class="field-label">Shift<select id="logShift"><option>Shift 1</option><option>Shift 2</option></select></label>
+          </div>
+          <label class="field-label">Period</label>
+          <div id="periodButtons" class="choice-row"><button data-value="Baseline">Baseline</button><button data-value="After" class="selected">After</button></div>
+        </div>
+
+        <div class="step-card">
+          <div class="step-title"><span>2</span><h3>Window and output</h3></div>
+          <div class="preset-row" aria-label="window presets">
+            <button data-total="30" data-break="0">30 min</button>
+            <button data-total="45" data-break="15">45 / break</button>
+            <button data-total="60" data-break="0">60 min</button>
+            <button data-total="480" data-break="30">Full shift</button>
+          </div>
+          <div class="quick-grid two">
+            <label class="field-label">Total window min<input id="totalWindowMin" inputmode="decimal" type="number" min="0" step="0.01" placeholder="60" /></label>
+            <label class="field-label">Planned break min<input id="plannedBreakMin" inputmode="decimal" type="number" min="0" step="0.01" placeholder="15" /></label>
+            <label class="field-label">Cases picked<input id="cases" inputmode="numeric" type="number" min="0" step="1" placeholder="0" /></label>
+            <label class="field-label">Pallets done<input id="pallets" inputmode="numeric" type="number" min="0" step="1" placeholder="0" /></label>
+          </div>
+          <label class="field-label">Observed cases/min from log <span>optional</span><input id="activeRateCpm" inputmode="decimal" type="number" min="0" step="0.01" placeholder="Only if the log shows it" /></label>
+          <div class="available-chip">Available production time <b id="availableTime">—</b></div>
+        </div>
+
+        <div class="step-card">
+          <div class="step-title"><span>3</span><h3>Where did the available time go?</h3></div>
+          <p class="hint">Use one bucket per minute. No double-counting. Unknown time goes to Unclassified / Unlogged Gap.</p>
+          <div id="lossBuckets" class="loss-buckets"></div>
+          <div class="meter-block">
+            <div class="meter-head"><b>Reconcile</b><span id="meterValue">0 / 0 min</span></div>
+            <div class="meter"><div id="meterFill" class="meter-fill"></div></div>
+            <div id="meterMessage" class="meter-message">Enter the window above.</div>
+          </div>
+          <button id="addUnclassifiedBtn" class="secondary hidden">Add remaining time to Unclassified</button>
+        </div>
+
+        <div class="step-card">
+          <div class="step-title"><span>4</span><h3>Notes</h3></div>
+          <label class="field-label">What happened? <span>optional</span><textarea id="notes" rows="3" placeholder="Example: restart slow after lunch, pallet overhang, associate tied up at 1R"></textarea></label>
+        </div>
+
+        <div class="sticky-actions">
+          <button id="cancelEditBtn" class="secondary hidden">Cancel edit</button>
+          <button id="saveLogBtn" class="primary" disabled>Save Observation</button>
+        </div>
+      </section>
+
+      <section id="view-work" class="view">
+        <div class="section-bar"><button class="back-btn" data-go="home">← Home</button><div><span class="eyebrow">Daily work</span><h2>Assigned Work</h2></div></div>
+        <div id="workList" class="work-list"></div>
+      </section>
+
+      <section id="view-logs" class="view">
+        <div class="section-bar"><button class="back-btn" data-go="home">← Home</button><div><span class="eyebrow">Review</span><h2>Saved Logs</h2></div></div>
+        <div id="logsBody"></div>
+      </section>
+
+      <section id="view-reports" class="view">
+        <div class="section-bar"><button class="back-btn" data-go="home">← Home</button><div><span class="eyebrow">Reports</span><h2>Executive View</h2></div></div>
+        <div id="statusBanner" class="banner"></div>
+        <div id="kpiGrid" class="kpi-grid"></div>
+        <div class="report-card"><h3>Baseline vs After</h3><table id="compareTable"></table><p class="micro">Trust the comparison only when After n ≥ 2.</p></div>
+        <div class="report-card"><h3>Say it carefully</h3><ul class="careful"><li>One window is not a trend.</li><li>Break time is not downtime. Count only the restart overrun.</li><li>Min/hr is normalized, not raw minutes.</li><li>Speed must come from the log’s own cases/min.</li></ul></div>
+      </section>
+
+      <section id="view-pareto" class="view">
+        <div class="section-bar"><button class="back-btn" data-go="home">← Home</button><div><span class="eyebrow">Pareto</span><h2>Top Loss Reason</h2></div></div>
+        <div class="choice-row compact" id="paretoPeriod"><button data-value="Baseline">Baseline</button><button data-value="After" class="selected">After</button></div>
+        <div class="report-card"><div id="paretoChart" class="pareto-chart"></div><p class="micro">Bars are normalized as minutes lost per available hour.</p></div>
+      </section>
+
+      <section id="view-savings" class="view">
+        <div class="section-bar"><button class="back-btn" data-go="home">← Home</button><div><span class="eyebrow">Finance</span><h2>Savings Check</h2></div></div>
+        <div class="report-card">
+          <p class="hint">Classify honestly: hard savings means labor removed, OT reduced, or budgeted hours avoided. Otherwise it is soft capacity / productivity gain.</p>
+          <div class="quick-grid two">
+            <label class="field-label">Hourly labor rate<input id="laborRate" type="number" inputmode="decimal" step="0.01" min="0" placeholder="33.00" /></label>
+            <label class="field-label">Verified hours saved / week<input id="hoursSavedWeek" type="number" inputmode="decimal" step="0.01" min="0" placeholder="0" /></label>
+            <label class="field-label">Weeks / year<input id="weeksYear" type="number" inputmode="numeric" min="0" step="1" value="52" /></label>
+            <label class="field-label">Savings type<select id="savingsType"><option>Soft capacity / productivity gain</option><option>Hard savings – labor removed</option><option>Hard savings – OT reduced</option><option>Cost avoidance</option></select></label>
+          </div>
+          <button id="saveSavingsBtn" class="primary">Save Savings Inputs</button>
+          <div id="savingsOutput" class="savings-output"></div>
+        </div>
+      </section>
+
+      <section id="view-export" class="view">
+        <div class="section-bar"><button class="back-btn" data-go="home">← Home</button><div><span class="eyebrow">Export</span><h2>Send to Workbook</h2></div></div>
+        <div class="report-card">
+          <p class="hint">Export After logs into the Project Aurora workbook. JSON backup keeps the phone data safe.</p>
+          <button id="copyAfterTsv" class="primary">Copy After Logs for Excel</button>
+          <button id="downloadAfterCsv" class="secondary">Download After CSV</button>
+          <button id="downloadAllCsv" class="secondary">Download All CSV</button>
+          <button id="downloadJson" class="secondary">Download JSON Backup</button>
+        </div>
+        <div class="report-card">
+          <h3>Restore backup</h3>
+          <input id="importJsonFile" type="file" accept="application/json,.json" />
+          <button id="importJsonBtn" class="secondary">Import JSON Backup</button>
+        </div>
+      </section>
+
+      <section id="view-admin" class="view">
+        <div class="section-bar"><button class="back-btn" data-go="home">← Home</button><div><span class="eyebrow">Admin</span><h2>System Controls</h2></div></div>
+        <div id="adminLocked" class="report-card">
+          <h3>Admin verification required</h3>
+          <label class="field-label">Password<input id="adminEntryPassword" type="password" placeholder="Admin password" /></label>
+          <button id="unlockAdminBtn" class="primary">Unlock Admin</button>
+        </div>
+        <div id="adminPanel" class="hidden">
+          <div class="report-card">
+            <h3>Data tools</h3>
+            <button id="clearAfterBtn" class="secondary danger">Clear After Logs</button>
+            <button id="resetAllBtn" class="secondary danger">Reset to Baseline Only</button>
+          </div>
+          <div class="report-card">
+            <h3>Master data</h3>
+            <p class="micro">Future upgrade: manage dropdowns, users, and cloud sync settings here.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <nav id="bottomNav" class="bottom-nav"></nav>
   </section>
 
-  <!-- ============ EXPORT ============ -->
-  <section id="view-export" class="view">
-    <div class="eyebrow">Send to the workbook</div>
-    <div class="card">
-      <div class="hint"><b>Recommended:</b> use <b>Copy After logs</b> because the workbook already has the 6/10 baseline row. Full CSV is only for archive or rebuilding the workbook from scratch. JSON is the safe full backup.</div>
-      <div class="btn-row" style="margin-top:12px">
-        <button type="button" id="copyAfterTSV" class="btn btn-primary">Copy After logs</button>
-        <button type="button" id="exportAfterCsvBtn" class="btn btn-ghost">After CSV</button>
-      </div>
-      <div class="btn-row" style="margin-top:10px">
-        <button type="button" id="copyTSV" class="btn btn-ghost">Copy full table</button>
-        <button type="button" id="exportCsvBtn" class="btn btn-ghost">Full CSV</button>
-      </div>
-      <div class="btn-row" style="margin-top:10px">
-        <button type="button" id="exportJsonBtn" class="btn btn-ghost">Download JSON backup</button>
-      </div>
-    </div>
-
-    <div class="eyebrow">Restore a backup</div>
-    <div class="card">
-      <input id="importJsonFile" type="file" accept="application/json,.json" />
-      <button type="button" id="importJsonBtn" class="btn btn-ghost" style="margin-top:12px">Import JSON backup</button>
-    </div>
-
-    <div class="eyebrow">Manage</div>
-    <div class="card">
-      <button type="button" id="seedBtn" class="btn btn-ghost">Load the 6/10 baseline</button>
-      <div class="tiny" style="text-align:center;margin:6px 0 12px">Verified reference: 190 cases, 12 pallets, 10-min restart overrun. Locked from deletion.</div>
-      <button type="button" id="clearAfterBtn" class="btn btn-ghost danger">Clear After logs</button>
-      <button type="button" id="resetAllBtn" class="btn btn-ghost danger" style="margin-top:10px">Reset to baseline only</button>
-    </div>
-    <div style="height:10px"></div>
-  </section>
-</main>
-
-<nav class="bottom-nav">
-  <button data-view="dashboard" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke-linecap="round" stroke-linejoin="round"/></svg>Stats</button>
-  <button data-view="entry"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>Add</button>
-  <button data-view="logs"><span class="tally" id="navTally">0</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16" stroke-linecap="round"/></svg>Logs</button>
-  <button data-view="pareto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18M8 14l3-4 3 3 4-6" stroke-linecap="round" stroke-linejoin="round"/></svg>Pareto</button>
-  <button data-view="savings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5a2.5 2 0 0 1 5 0c0 1.5-5 1-5 3a2.5 2 0 0 0 5 0" stroke-linecap="round"/></svg>Savings</button>
-  <button data-view="export"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round" stroke-linejoin="round"/></svg>Export</button>
-</nav>
-
-<div id="toast"></div>
-<script src="app.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
