@@ -58,8 +58,10 @@
         </div>
       </div>
       <div class="user-chip">
+        <span id="netBadge" class="net-badge hidden">Offline</span>
         <span id="userInitials">--</span>
         <div><b id="userNameTop">User</b><small id="userRoleTop">Role</small></div>
+        <button id="switchRoleBtn" class="switch-role-btn" type="button">Switch Role</button>
       </div>
     </header>
 
@@ -77,11 +79,58 @@
         <div id="tileGrid" class="tile-grid"></div>
       </section>
 
+      <section id="view-easy" class="view">
+        <div class="section-bar">
+          <button class="back-btn" data-go="home">← Home</button>
+          <div><span class="eyebrow">Quick log</span><h2>What happened?</h2></div>
+        </div>
+        <button id="toAdvancedBtn" class="mode-switch hidden">Switch to Advanced view ›</button>
+
+        <div class="step-card">
+          <div class="step-title"><span>1</span><h3>What happened?</h3></div>
+          <div id="easyWhat" class="easy-grid"></div>
+        </div>
+
+        <div id="easyStep2" class="step-card easy-hidden">
+          <div class="step-title"><span>2</span><h3>How long did it last?</h3></div>
+          <div id="easyTime" class="easy-time">
+            <button data-min="1">1 min</button>
+            <button data-min="2">2 min</button>
+            <button data-min="5">5 min</button>
+            <button data-min="10">10 min</button>
+            <button data-min="15">15 min</button>
+            <button data-min="custom">Custom</button>
+          </div>
+          <label id="easyCustomWrap" class="field-label big-num easy-hidden">Minutes<input id="easyCustomMin" type="number" inputmode="decimal" min="0" step="0.5" placeholder="Type minutes" /></label>
+        </div>
+
+        <div id="easyStep3" class="step-card easy-hidden">
+          <div class="step-title"><span>3</span><h3>How many?</h3></div>
+          <div class="quick-grid two">
+            <label class="field-label big-num">Cases picked<input id="easyCases" type="number" inputmode="numeric" min="0" step="1" placeholder="0" /></label>
+            <label class="field-label big-num">Pallets done<input id="easyPallets" type="number" inputmode="numeric" min="0" step="1" placeholder="0" /></label>
+          </div>
+        </div>
+
+        <div id="easyStep4" class="step-card easy-hidden">
+          <div class="step-title"><span>4</span><h3>Add a note <span class="opt">optional</span></h3></div>
+          <label class="field-label"><textarea id="easyNotes" rows="2" placeholder="Anything worth remembering"></textarea></label>
+          <button id="easyPhotoBtn" class="secondary" disabled>📷 Add photo (coming soon)</button>
+        </div>
+
+        <div id="easyMsg" class="easy-msg">Start by picking what happened.</div>
+
+        <div class="sticky-actions">
+          <button id="easySaveBtn" class="primary" disabled>Save</button>
+        </div>
+      </section>
+
       <section id="view-entry" class="view">
         <div class="section-bar">
           <button class="back-btn" data-go="home">← Home</button>
           <div><span class="eyebrow">Guided log</span><h2>DEX Observation</h2></div>
         </div>
+        <button id="toEasyBtn" class="mode-switch hidden">‹ Switch to Easy view</button>
         <div class="step-card">
           <div class="step-title"><span>1</span><h3>Who / when?</h3></div>
           <div class="quick-grid two">
@@ -147,14 +196,14 @@
         <div class="section-bar"><button class="back-btn" data-go="home">← Home</button><div><span class="eyebrow">Reports</span><h2>Executive View</h2></div></div>
         <div id="statusBanner" class="banner"></div>
         <div id="kpiGrid" class="kpi-grid"></div>
-        <div class="report-card"><h3>Baseline vs After</h3><table id="compareTable"></table><p class="micro">Trust the comparison only when After n ≥ 2.</p></div>
+        <div class="report-card"><h3>Baseline vs After — productivity observation windows</h3><table id="compareTable"></table><p class="micro">Trust the comparison only when After n ≥ 2.</p></div>
         <div class="report-card"><h3>Say it carefully</h3><ul class="careful"><li>One window is not a trend.</li><li>Break time is not downtime. Count only the restart overrun.</li><li>Min/hr is normalized, not raw minutes.</li><li>Speed must come from the log’s own cases/min.</li></ul></div>
       </section>
 
       <section id="view-pareto" class="view">
         <div class="section-bar"><button class="back-btn" data-go="home">← Home</button><div><span class="eyebrow">Pareto</span><h2>Top Loss Reason</h2></div></div>
         <div class="choice-row compact" id="paretoPeriod"><button data-value="Baseline">Baseline</button><button data-value="After" class="selected">After</button></div>
-        <div class="report-card"><div id="paretoChart" class="pareto-chart"></div><p class="micro">Bars are normalized as minutes lost per available hour.</p></div>
+        <div class="report-card"><div id="paretoChart" class="pareto-chart"></div><p class="micro">Top issues by logged minutes — includes Easy events and Advanced windows, normalized per available hour.</p></div>
       </section>
 
       <section id="view-savings" class="view">
@@ -212,6 +261,6 @@
     <nav id="bottomNav" class="bottom-nav"></nav>
   </section>
 
-  <script src="app.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
