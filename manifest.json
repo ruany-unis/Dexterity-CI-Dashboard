@@ -1,0 +1,13 @@
+{
+  "name": "Aurora DEX Log",
+  "short_name": "Aurora DEX",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0E2438",
+  "theme_color": "#0E2438",
+  "description": "Mobile DEX observation logger with live loss-tree reconciliation for Project Aurora.",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

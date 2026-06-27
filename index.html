@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0E2438" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<title>Aurora · DEX Log</title>
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icon.svg" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header class="app-header">
+  <div class="brand">
+    <div class="beam"></div>
+    <div>
+      <h1>AURORA</h1>
+      <div class="sub">DEX LOG</div>
+    </div>
+  </div>
+  <div class="head-right">
+    <button id="installBtn" class="ghost hidden" type="button">Install</button>
+    <div class="obs">OBSERVATIONS<b id="hCount">0</b></div>
+  </div>
+</header>
+
+<main>
+  <!-- ============ DASHBOARD ============ -->
+  <section id="view-dashboard" class="view active">
+    <div class="eyebrow">Executive view</div>
+    <div id="forkMessage" class="banner"></div>
+    <div class="statgrid" id="kpiGrid"></div>
+
+    <div class="eyebrow">Baseline vs After</div>
+    <div class="card">
+      <table id="beforeAfterTable" class="cmp"></table>
+      <div class="tiny">Green = moved the right way. For losses, lower After is better. Trust the comparison only when After n ≥ 2.</div>
+    </div>
+
+    <div class="eyebrow">Say it carefully</div>
+    <div class="card caution">
+      <p><b>One window isn't a trend.</b> The 6/10 baseline is a single observation. Don't present a delta until After n ≥ 2.</p>
+      <p><b>Break ≠ downtime.</b> A 25-min post-break stop with a 15-min planned break = a 10-min restart overrun, not 25 lost.</p>
+      <p><b>"min/hr" is normalized,</b> not raw minutes. It scales loss to available production time so windows compare fairly.</p>
+      <p><b>Speed claim:</b> only the log's own cases/min. Never cases ÷ pick-time — that overstates the real rate.</p>
+    </div>
+  </section>
+
+  <!-- ============ ADD ============ -->
+  <section id="view-entry" class="view">
+    <div class="eyebrow" id="entryTitle">New observation</div>
+
+    <div class="card">
+      <div class="row2">
+        <label class="lab">Date<input id="date" type="date" required></label>
+        <label class="lab">Shift
+          <div class="seg" id="shiftSeg">
+            <button type="button" data-v="Shift 1" class="on">1st</button>
+            <button type="button" data-v="Shift 2">2nd</button>
+          </div>
+        </label>
+      </div>
+      <label class="lab" style="margin-top:12px">Period — before or after the changes?
+        <div class="seg period" id="periodSeg">
+          <button type="button" data-v="Baseline">Baseline</button>
+          <button type="button" data-v="After" class="on">After</button>
+        </div>
+      </label>
+    </div>
+
+    <div class="eyebrow">The window</div>
+    <div class="card">
+      <div class="row2">
+        <label class="lab">Total window <span class="opt">min</span><input id="totalWindowMin" inputmode="decimal" type="number" step="0.01" min="0" class="mono" placeholder="e.g. 60"></label>
+        <label class="lab">Planned break <span class="opt">min</span><input id="plannedBreakMin" inputmode="decimal" type="number" step="0.01" min="0" class="mono" placeholder="e.g. 15"></label>
+      </div>
+      <div class="chip">Available production time <b id="availChip">— min</b></div>
+    </div>
+
+    <div class="eyebrow">Output</div>
+    <div class="card">
+      <div class="row2">
+        <label class="lab">Cases picked<input id="cases" inputmode="numeric" type="number" step="1" min="0" class="mono" placeholder="0"></label>
+        <label class="lab">Pallets done<input id="pallets" inputmode="numeric" type="number" step="1" min="0" class="mono" placeholder="0"></label>
+      </div>
+      <label class="lab" style="margin-top:12px">Observed cases/min from the log <span class="opt">— optional</span>
+        <input id="activeRateCpm" inputmode="decimal" type="number" step="0.01" min="0" class="mono" placeholder="leave blank if not on the log">
+      </label>
+      <div class="tiny">Enter the log's own average if it has one. We never back it out of cases ÷ pick-time — that overstates the rate.</div>
+    </div>
+
+    <div class="eyebrow">Where the available time went</div>
+    <div class="card">
+      <div class="tiny" style="margin-bottom:6px">Split available minutes into one bucket each — no double counting. The meter shows when it balances.</div>
+      <div id="alloc"></div>
+    </div>
+
+    <div class="card">
+      <div class="meter-wrap">
+        <div class="meter-head"><span class="ttl">Reconcile</span><span class="val" id="mVal">0 / 0 min</span></div>
+        <div class="meter" id="meter"><div class="fill" id="mFill"></div></div>
+        <div class="recon-msg" id="mMsg"><span class="dot" style="background:#b6c2cd"></span>Enter the window above to begin.</div>
+      </div>
+    </div>
+
+    <label class="lab">Notes <span class="opt">— what happened, log source, associate</span>
+      <textarea id="notes" rows="3" placeholder="e.g. carton overhang on pallet 7; restart slow after lunch"></textarea>
+    </label>
+
+    <button type="button" id="saveBtn" class="btn btn-primary" disabled>Save observation</button>
+    <button type="button" id="cancelBtn" class="btn btn-ghost hidden" style="margin-top:10px">Cancel edit</button>
+    <div style="height:10px"></div>
+  </section>
+
+  <!-- ============ LOGS ============ -->
+  <section id="view-logs" class="view">
+    <div class="eyebrow">Logged observations</div>
+    <div id="logsBody"></div>
+  </section>
+
+  <!-- ============ PARETO ============ -->
+  <section id="view-pareto" class="view">
+    <div class="eyebrow">Where the time is lost</div>
+    <div class="seg period" id="paretoSeg" style="margin-bottom:6px">
+      <button type="button" data-v="Baseline">Baseline</button>
+      <button type="button" data-v="After" class="on">After</button>
+    </div>
+    <div class="card"><div id="paretoChart" class="par"></div>
+      <div class="tiny">Normalized: minutes lost per available hour. The top bar is your constraint.</div>
+    </div>
+  </section>
+
+  <!-- ============ SAVINGS ============ -->
+  <section id="view-savings" class="view">
+    <div class="eyebrow">Finance check</div>
+    <div class="card">
+      <p class="muted small">Classify honestly. Hard savings = labor removed, OT reduced, or budgeted hours avoided. Otherwise it's soft capacity / productivity gain.</p>
+      <label class="lab">Hourly labor rate <span class="opt">$ loaded</span><input id="laborRate" inputmode="decimal" type="number" step="0.01" min="0" class="mono" placeholder="e.g. 33.00"></label>
+      <label class="lab" style="margin-top:12px">Verified hours saved per week<input id="hoursSavedWeek" inputmode="decimal" type="number" step="0.01" min="0" class="mono" placeholder="0"></label>
+      <div class="row2" style="margin-top:12px">
+        <label class="lab">Weeks / year<input id="weeksYear" inputmode="numeric" type="number" step="1" min="0" class="mono" value="52"></label>
+        <label class="lab">Savings type
+          <select id="savingsType">
+            <option>Soft capacity / productivity gain</option>
+            <option>Hard savings – labor removed</option>
+            <option>Hard savings – OT reduced</option>
+            <option>Cost avoidance</option>
+          </select>
+        </label>
+      </div>
+      <button type="button" id="saveSavingsBtn" class="btn btn-primary" style="margin-top:14px">Save savings inputs</button>
+      <div id="savingsOutput" class="savings-output"></div>
+    </div>
+  </section>
+
+  <!-- ============ EXPORT ============ -->
+  <section id="view-export" class="view">
+    <div class="eyebrow">Send to the workbook</div>
+    <div class="card">
+      <div class="hint"><b>Recommended:</b> use <b>Copy After logs</b> because the workbook already has the 6/10 baseline row. Full CSV is only for archive or rebuilding the workbook from scratch. JSON is the safe full backup.</div>
+      <div class="btn-row" style="margin-top:12px">
+        <button type="button" id="copyAfterTSV" class="btn btn-primary">Copy After logs</button>
+        <button type="button" id="exportAfterCsvBtn" class="btn btn-ghost">After CSV</button>
+      </div>
+      <div class="btn-row" style="margin-top:10px">
+        <button type="button" id="copyTSV" class="btn btn-ghost">Copy full table</button>
+        <button type="button" id="exportCsvBtn" class="btn btn-ghost">Full CSV</button>
+      </div>
+      <div class="btn-row" style="margin-top:10px">
+        <button type="button" id="exportJsonBtn" class="btn btn-ghost">Download JSON backup</button>
+      </div>
+    </div>
+
+    <div class="eyebrow">Restore a backup</div>
+    <div class="card">
+      <input id="importJsonFile" type="file" accept="application/json,.json" />
+      <button type="button" id="importJsonBtn" class="btn btn-ghost" style="margin-top:12px">Import JSON backup</button>
+    </div>
+
+    <div class="eyebrow">Manage</div>
+    <div class="card">
+      <button type="button" id="seedBtn" class="btn btn-ghost">Load the 6/10 baseline</button>
+      <div class="tiny" style="text-align:center;margin:6px 0 12px">Verified reference: 190 cases, 12 pallets, 10-min restart overrun. Locked from deletion.</div>
+      <button type="button" id="clearAfterBtn" class="btn btn-ghost danger">Clear After logs</button>
+      <button type="button" id="resetAllBtn" class="btn btn-ghost danger" style="margin-top:10px">Reset to baseline only</button>
+    </div>
+    <div style="height:10px"></div>
+  </section>
+</main>
+
+<nav class="bottom-nav">
+  <button data-view="dashboard" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke-linecap="round" stroke-linejoin="round"/></svg>Stats</button>
+  <button data-view="entry"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14" stroke-linecap="round"/></svg>Add</button>
+  <button data-view="logs"><span class="tally" id="navTally">0</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16" stroke-linecap="round"/></svg>Logs</button>
+  <button data-view="pareto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18M8 14l3-4 3 3 4-6" stroke-linecap="round" stroke-linejoin="round"/></svg>Pareto</button>
+  <button data-view="savings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5a2.5 2 0 0 1 5 0c0 1.5-5 1-5 3a2.5 2 0 0 0 5 0" stroke-linecap="round"/></svg>Savings</button>
+  <button data-view="export"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round" stroke-linejoin="round"/></svg>Export</button>
+</nav>
+
+<div id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>
