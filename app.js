@@ -1,60 +1,42 @@
-/* ===== Aurora DEX Log — merged build =====
-   PWA + JSON backup + savings (from Cody's structure)
-   reconcile meter + save-gate + no silent rate derivation (honesty fixes)
-*/
-const STORAGE_KEY='aurora_dex_logs_v3';
-const SAVINGS_KEY='aurora_dex_savings_v1';
-const EPS=1; // minutes tolerance for reconciliation
-
-/* resilient storage: window.storage (Claude) -> localStorage (real browser) -> memory */
-let mem={};
-const Store={
-  get(k){
-    try{const v=localStorage.getItem(k);if(v!=null)return JSON.parse(v);}catch(e){}
-    return mem[k]??null;
-  },
-  set(k,v){
-    const s=JSON.stringify(v);
-    try{localStorage.setItem(k,s);}catch(e){}
-    try{if(window.storage)window.storage.set(k,s,false);}catch(e){}
-    mem[k]=v;
-  }
-};
+const STORAGE_KEY='aurora_redesign_logs_v1';
+const USER_KEY='aurora_redesign_user_v1';
+const SAVINGS_KEY='aurora_redesign_savings_v1';
+const ADMIN_PASSWORD='Nacuchis1';
+const EPS=1;
 
 const CATS=[
-  {id:'activePickMin',  name:'Active picking',    sub:'robot actually picking',       cls:'c-active',  loss:false},
-  {id:'palletSwapMin',  name:'Pallet swap',       sub:'between one pallet & the next', cls:'c-swap',    loss:true},
-  {id:'restartOverrunMin',name:'Restart overrun', sub:'time past the planned break',   cls:'c-restart', loss:true},
-  {id:'equipmentStopMin',name:'Equipment stop',   sub:'sensor, suction, reset, jam',   cls:'c-equip',   loss:true},
-  {id:'inputStopMin',   name:'Input stop',        sub:'overhang, bad pallet, carton',  cls:'c-input',   loss:true},
-  {id:'laborMultitaskMin',name:'Labor / multitask',sub:'owner working elsewhere',      cls:'c-labor',   loss:true},
-  {id:'unclassifiedGapMin',name:'Unclassified gap',sub:'time you can\u2019t attribute yet',cls:'c-uncl', loss:true},
+  {id:'activePickMin',name:'Active picking',sub:'robot picking cases',cls:'c-active',loss:false,icon:'🤖'},
+  {id:'palletSwapMin',name:'Pallet swap',sub:'between pallets',cls:'c-swap',loss:true,icon:'🔄'},
+  {id:'restartOverrunMin',name:'Restart overrun',sub:'past planned break',cls:'c-restart',loss:true,icon:'⏱️'},
+  {id:'equipmentStopMin',name:'Equipment stop',sub:'sensor, suction, jam',cls:'c-equipment',loss:true,icon:'🛠️'},
+  {id:'inputStopMin',name:'Input stop',sub:'overhang, pallet, carton',cls:'c-input',loss:true,icon:'📦'},
+  {id:'laborMultitaskMin',name:'Labor / multitask',sub:'owner pulled away',cls:'c-labor',loss:true,icon:'👷'},
+  {id:'unclassifiedGapMin',name:'Unclassified gap',sub:'unknown/unlogged time',cls:'c-unclassified',loss:true,icon:'❔'}
 ];
 const LOSS=CATS.filter(c=>c.loss);
-
-const baselineRow={
-  id:'baseline-2026-06-10',locked:true,date:'2026-06-10',shift:'Shift 1',period:'Baseline',
-  totalWindowMin:45,plannedBreakMin:15,cases:190,pallets:12,activePickMin:11.39,activeRateCpm:14.3,
-  palletSwapMin:0,restartOverrunMin:10,equipmentStopMin:0,inputStopMin:4.76,laborMultitaskMin:0,unclassifiedGapMin:3.85,
-  notes:'Seed baseline from 6/10 observation. 15-min planned break separated from 10-min restart overrun. 3.85 min is reconstructed/unlogged gap, not assumed empty lane.'
+const baselineRow={id:'baseline-2026-06-10',locked:true,createdBy:'System',date:'2026-06-10',shift:'Shift 1',period:'Baseline',totalWindowMin:45,plannedBreakMin:15,cases:190,pallets:12,activePickMin:11.39,activeRateCpm:14.3,palletSwapMin:0,restartOverrunMin:10,equipmentStopMin:0,inputStopMin:4.76,laborMultitaskMin:0,unclassifiedGapMin:3.85,notes:'Seed baseline from 6/10. 15-min planned break separated from 10-min restart overrun. 3.85 min is reconstructed/unlogged gap.'};
+const roleInfo={
+  'Warehouse Associate':{msg:'Associate mode: log observations, view assigned work, and review your saved entries.',views:['home','work','entry','logs','export'],canDelete:false},
+  'Warehouse Lead':{msg:'Lead mode: log observations, review team flow, use Pareto, and export logs.',views:['home','work','entry','logs','reports','pareto','export'],canDelete:false},
+  'Manager / Supervisor':{msg:'Manager mode: view reports, Pareto, savings, work status, and exports.',views:['home','work','entry','logs','reports','pareto','savings','export'],canDelete:false},
+  'Admin':{msg:'Admin mode: full access to reports, exports, savings, and system controls.',views:['home','work','entry','logs','reports','pareto','savings','export','admin'],canDelete:true}
 };
 
-let logs=loadLogs();
-let deferred=null;
-
+const $=id=>document.getElementById(id);
 const n=v=>{const x=Number(v);return Number.isFinite(x)?x:0;};
-const f1=v=>(v==null||!Number.isFinite(v))?'\u2014':Number(v).toLocaleString(undefined,{maximumFractionDigits:1,minimumFractionDigits:1});
-const f0=v=>(v==null||!Number.isFinite(v))?'\u2014':Math.round(v).toLocaleString();
-const esc=t=>String(t).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+const f0=v=>(v==null||!Number.isFinite(v))?'—':Math.round(v).toLocaleString();
+const f1=v=>(v==null||!Number.isFinite(v))?'—':Number(v).toLocaleString(undefined,{maximumFractionDigits:1,minimumFractionDigits:1});
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let logs=loadLogs(), user=loadUser(), selectedPeriod='After', editId=null, adminUnlocked=false;
 
-function loadLogs(){
-  const saved=Store.get(STORAGE_KEY);
-  if(!Array.isArray(saved)||!saved.length)return [baselineRow];
-  return saved.some(r=>r.id===baselineRow.id)?saved:[baselineRow,...saved];
-}
-function saveLogs(){Store.set(STORAGE_KEY,logs);refreshCounts();}
+function loadLogs(){try{const saved=JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]'); if(Array.isArray(saved)&&saved.length){return saved.some(x=>x.id===baselineRow.id)?saved:[baselineRow,...saved];}}catch{} return [baselineRow];}
+function saveLogs(){localStorage.setItem(STORAGE_KEY,JSON.stringify(logs));renderAll();}
+function loadUser(){try{return JSON.parse(localStorage.getItem(USER_KEY)||'null');}catch{return null;}}
+function saveUser(){localStorage.setItem(USER_KEY,JSON.stringify(user));}
+function today(){return new Date().toISOString().slice(0,10);}
+function initials(name){return (name||'U').split(/\s+/).map(p=>p[0]).join('').slice(0,2).toUpperCase();}
+function toast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toast._t);toast._t=setTimeout(()=>t.classList.remove('show'),2300);}
 
-/* ---- core calc: NEVER derive active rate from cases/pick-time ---- */
 function calc(row){
   const total=n(row.totalWindowMin), planned=n(row.plannedBreakMin);
   const available=Math.max(0,total-planned);
@@ -62,283 +44,131 @@ function calc(row){
   const lossTotal=LOSS.reduce((s,c)=>s+n(row[c.id]),0);
   const accounted=active+lossTotal;
   const diff=available-accounted;
-  const status=(available>0&&Math.abs(diff)<=EPS)?'OK':'CHECK';
+  const status=available>0 && Math.abs(diff)<=EPS?'OK':'CHECK';
   const netCph=available>0?n(row.cases)/available*60:null;
-  // active rate: ONLY the log's stated value. blank -> null (never cases/active)
   const activeRateCpm=n(row.activeRateCpm)>0?n(row.activeRateCpm):null;
-  const casesPerPallet=n(row.pallets)>0?n(row.cases)/n(row.pallets):null;
-  return {total,planned,available,active,lossTotal,accounted,diff,status,netCph,activeRateCpm,casesPerPallet};
+  return {total,planned,available,active,lossTotal,accounted,diff,status,netCph,activeRateCpm};
 }
-
-function periodRows(p){return logs.filter(r=>r.period===p);}
+function rows(period){return logs.filter(r=>r.period===period);}
 function aggregate(period){
-  const rows=periodRows(period), N=rows.length;
-  const t={period,n:N,availableMin:0,activePickMin:0,cases:0,pallets:0,lossTotal:0,okRows:0,checkRows:0,
-    rateNum:0,rateDen:0};
-  LOSS.forEach(c=>t[c.id]=0);
-  rows.forEach(r=>{const c=calc(r);
-    t.availableMin+=c.available;t.activePickMin+=c.active;t.cases+=n(r.cases);t.pallets+=n(r.pallets);
-    t.lossTotal+=c.lossTotal;c.status==='OK'?t.okRows++:t.checkRows++;
-    LOSS.forEach(x=>t[x.id]+=n(r[x.id]));
-    if(c.activeRateCpm){t.rateNum+=c.activeRateCpm*Math.max(1,n(r.pallets));t.rateDen+=Math.max(1,n(r.pallets));}
-  });
-  t.casesPerWindow=N?t.cases/N:null;
-  t.palletsPerWindow=N?t.pallets/N:null;
-  t.netCph=t.availableMin>0?t.cases/t.availableMin*60:null;
-  t.activeRateCpm=t.rateDen>0?t.rateNum/t.rateDen:null;
-  t.lossPerAvailHour=t.availableMin>0?t.lossTotal/t.availableMin*60:null;
-  t.lossHr={};LOSS.forEach(c=>t.lossHr[c.id]=t.availableMin>0?t[c.id]/t.availableMin*60:null);
-  t.pareto=LOSS.map(c=>({c,minutes:t[c.id],hr:t.lossHr[c.id]})).filter(x=>x.minutes>0).sort((a,b)=>b.minutes-a.minutes);
-  return t;
+  const rs=rows(period); const out={period,n:rs.length,cases:0,pallets:0,availableMin:0,lossTotal:0,activePickMin:0,okRows:0,checkRows:0,rateNum:0,rateDen:0};
+  LOSS.forEach(c=>out[c.id]=0);
+  rs.forEach(r=>{const c=calc(r);out.cases+=n(r.cases);out.pallets+=n(r.pallets);out.availableMin+=c.available;out.lossTotal+=c.lossTotal;out.activePickMin+=c.active;c.status==='OK'?out.okRows++:out.checkRows++;LOSS.forEach(x=>out[x.id]+=n(r[x.id]));if(c.activeRateCpm){out.rateNum+=c.activeRateCpm*Math.max(1,n(r.pallets));out.rateDen+=Math.max(1,n(r.pallets));}});
+  out.casesPerWindow=out.n?out.cases/out.n:null; out.palletsPerWindow=out.n?out.pallets/out.n:null; out.netCph=out.availableMin>0?out.cases/out.availableMin*60:null; out.activeRateCpm=out.rateDen>0?out.rateNum/out.rateDen:null; out.lossPerHour=out.availableMin>0?out.lossTotal/out.availableMin*60:null; out.lossHr={}; LOSS.forEach(c=>out.lossHr[c.id]=out.availableMin>0?out[c.id]/out.availableMin*60:null); out.pareto=LOSS.map(c=>({c,minutes:out[c.id],hr:out.lossHr[c.id]})).filter(x=>x.minutes>0).sort((a,b)=>b.minutes-a.minutes); return out;
 }
 
-/* ---------------- form ---------------- */
-const $=id=>document.getElementById(id);
-let editId=null, fShift='Shift 1', fPeriod='After';
-const fInputs={};
-
-function buildAlloc(){
-  const w=$('alloc');w.innerHTML='';
-  CATS.forEach(c=>{
-    const row=document.createElement('div');row.className='alloc';
-    row.innerHTML=`<span class="swatch ${c.cls}"></span>
-      <span class="name">${c.name}<small>${c.sub}</small></span>
-      <input type="number" inputmode="decimal" step="0.01" min="0" data-cat="${c.id}" placeholder="0">`;
-    w.appendChild(row);
-    const inp=row.querySelector('input');fInputs[c.id]=inp;inp.addEventListener('input',updateMeter);
-  });
-}
-function readForm(){
-  const r={date:$('date').value,shift:fShift,period:fPeriod,
-    totalWindowMin:$('totalWindowMin').value,plannedBreakMin:$('plannedBreakMin').value,
-    cases:$('cases').value,pallets:$('pallets').value,activeRateCpm:$('activeRateCpm').value,
-    notes:$('notes').value};
-  CATS.forEach(c=>r[c.id]=fInputs[c.id].value);
-  return r;
-}
-function updateMeter(){
-  const r=readForm(), c=calc(r);
-  $('availChip').textContent=(n(r.totalWindowMin)||n(r.plannedBreakMin))?c.available+' min':'\u2014 min';
-  $('mVal').textContent=`${Math.round(c.accounted*100)/100} / ${c.available} min`;
-  const fill=$('mFill');fill.innerHTML='';
-  const base=Math.max(c.available,c.accounted,1);
-  CATS.forEach(cat=>{const v=n(r[cat.id]);if(v<=0)return;
-    const seg=document.createElement('div');seg.className='seg-fill';
-    seg.style.background=getComputedStyle(document.querySelector('.'+cat.cls)).backgroundColor;
-    seg.style.width=(v/base*100)+'%';fill.appendChild(seg);});
-  fill.style.width=Math.min(100,c.accounted/base*100)+'%';
-  const msg=$('mMsg'), meter=$('meter');msg.className='recon-msg';meter.classList.remove('ok');
-  const diff=Math.round(c.diff*100)/100;let balanced=false;
-  if(c.available<=0){msg.innerHTML='<span class="dot" style="background:#b6c2cd"></span>Enter the window above to begin.';}
-  else if(Math.abs(diff)<=EPS){balanced=true;msg.classList.add('ok');meter.classList.add('ok');
-    msg.innerHTML='<span class="dot" style="background:var(--green)"></span>Balanced \u2014 every minute accounted for.';}
-  else if(diff>EPS){balanced=false;msg.classList.add('warn');
-    msg.innerHTML=`<span class="dot" style="background:var(--amber)"></span>${diff} min unaccounted.
-      <button class="btn-mini" type="button" id="dropBtn">Add to Unclassified</button>`;
-    setTimeout(()=>{const b=$('dropBtn');if(b)b.onclick=dropRemainder;},0);}
-  else{msg.classList.add('over');
-    msg.innerHTML=`<span class="dot" style="background:var(--red)"></span>${Math.abs(diff)} min over available \u2014 trim a bucket.`;}
-  $('saveBtn').disabled=!(balanced && n(r.cases)>0 && n(r.totalWindowMin)>0);
-}
-function dropRemainder(){const r=readForm(),c=calc(r);if(c.diff>0){
-  fInputs.unclassifiedGapMin.value=(n(r.unclassifiedGapMin)+c.diff).toFixed(2).replace(/\.00$/,'');updateMeter();}}
-
-function setSeg(id,v){$(id).querySelectorAll('button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));}
-function wireSeg(id,setter){$(id).querySelectorAll('button').forEach(b=>b.onclick=()=>{
-  $(id).querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');setter(b.dataset.v);});}
-
-function resetForm(keepDate){
-  editId=null;$('entryTitle').textContent='New observation';
-  $('saveBtn').textContent='Save observation';$('cancelBtn').classList.add('hidden');
-  if(!keepDate)$('date').value=new Date().toISOString().slice(0,10);
-  ['totalWindowMin','plannedBreakMin','cases','pallets','activeRateCpm','notes'].forEach(k=>$(k).value='');
-  CATS.forEach(c=>fInputs[c.id].value='');
-  fShift='Shift 1';setSeg('shiftSeg','Shift 1');fPeriod='After';setSeg('periodSeg','After');
-  updateMeter();
-}
-function fillForm(row){
-  editId=row.id;
-  $('date').value=row.date||'';$('totalWindowMin').value=row.totalWindowMin??'';$('plannedBreakMin').value=row.plannedBreakMin??'';
-  $('cases').value=row.cases??'';$('pallets').value=row.pallets??'';$('activeRateCpm').value=row.activeRateCpm??'';$('notes').value=row.notes||'';
-  CATS.forEach(c=>fInputs[c.id].value=row[c.id]??'');
-  fShift=row.shift||'Shift 1';setSeg('shiftSeg',fShift);
-  fPeriod=row.period||'After';setSeg('periodSeg',fPeriod);
-  $('entryTitle').textContent=row.locked?'Edit baseline':'Edit observation';
-  $('saveBtn').textContent='Update observation';$('cancelBtn').classList.remove('hidden');
-  updateMeter();
-}
-window.editLog=id=>{const r=logs.find(x=>x.id===id);if(r){fillForm(r);setView('entry');}};
-window.deleteLog=id=>{const r=logs.find(x=>x.id===id);if(!r||r.locked)return;
-  if(confirm('Delete this observation?')){logs=logs.filter(x=>x.id!==id);saveLogs();render();toast('Deleted');}};
-
-function save(){
-  const r=readForm();
-  CATS.forEach(c=>r[c.id]=n(r[c.id]));
-  ['totalWindowMin','plannedBreakMin','cases','pallets','activeRateCpm'].forEach(k=>r[k]=n(r[k]));
-  if(editId){const i=logs.findIndex(x=>x.id===editId);
-    if(i>=0){const lk=logs[i].locked;logs[i]={...logs[i],...r,id:editId,locked:lk};}}
-  else{r.id='log-'+Date.now();logs.push(r);}
-  saveLogs();toast(editId?'Observation updated':'Observation saved');
-  const d=$('date').value;resetForm(true);$('date').value=d;setView('logs');
-}
-
-/* ---------------- render ---------------- */
-function setView(name){
-  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
-  $('view-'+name).classList.add('active');
-  document.querySelectorAll('.bottom-nav button').forEach(b=>b.classList.toggle('active',b.dataset.view===name));
-  window.scrollTo({top:0,behavior:'smooth'});render();
-}
-function refreshCounts(){
-  const after=periodRows('After').length;
-  $('hCount').textContent=logs.length;
-  const t=$('navTally');t.style.display=after?'flex':'none';t.textContent=after;
-}
-function bn(t,ic,h,p){return `<div class="banner ${t}"><span class="bd">${ic}</span><div><h4>${h}</h4><p>${p}</p></div></div>`;}
-
-function renderDash(){
-  const b=aggregate('Baseline'), a=aggregate('After');
-  let fork;
-  if(a.n===0)fork=bn('warn','\u2691','No After logs yet','Report the process-adoption finding, not a trend. Pull the EX-10 logs, add them as After, then read this.');
-  else if(a.checkRows>0)fork=bn('warn','\u26A0',`${a.checkRows} After window(s) don\u2019t balance`,'Fix the rows marked CHECK in Logs before trusting the comparison.');
-  else if(a.n===1)fork=bn('warn','1\u20E3','One After window \u2014 a snapshot','Add a few more shifts before claiming a trend.');
-  else fork=bn('go','\u2713',`${a.n} After windows ready`,`Top logged loss: <strong>${a.pareto[0]?a.pareto[0].c.name:'\u2014'}</strong>. Build the deck only after reviewing this.`);
-  $('forkMessage').outerHTML=`<div id="forkMessage" class="banner ${fork.match(/banner (\w+)/)[1]}">${fork.replace(/^<div[^>]*>/,'').replace(/<\/div>$/,'')}</div>`;
-
-  const top=a.n?a:b, label=a.n?'After':'Baseline';
-  $('kpiGrid').innerHTML=[
-     st('Baseline windows',`n=${b.n}`,'6/10 reference seeded'),
-    st('After windows',`n=${a.n}`,a.n?'real logs entered':'waiting on EX-10 logs'),
-    st('Cases / available hr',f0(top.netCph),label+' \u00B7 honest productivity'),
-    st('Top logged loss',top.pareto[0]?top.pareto[0].c.name:'\u2014',label),
-  ].join('');
-
-  // before vs after
-  const rows=[
-    ['Cases / window',f0(b.casesPerWindow),a.n?f0(a.casesPerWindow):'\u2014',a.n?d(a.casesPerWindow,b.casesPerWindow,'up',f0):null],
-    ['Cases / available hr',f0(b.netCph),a.n?f0(a.netCph):'\u2014',a.n?d(a.netCph,b.netCph,'up',f0):null],
-    ['Pallets / window',f1(b.palletsPerWindow),a.n?f1(a.palletsPerWindow):'\u2014',a.n?d(a.palletsPerWindow,b.palletsPerWindow,'up',f1):null],
-    ['Active rate (cases/min)',f1(b.activeRateCpm),a.n?f1(a.activeRateCpm):'\u2014',a.n?d(a.activeRateCpm,b.activeRateCpm,'up',f1):null],
-    ['Loss / available hr',f1(b.lossPerAvailHour),a.n?f1(a.lossPerAvailHour):'\u2014',a.n?d(a.lossPerAvailHour,b.lossPerAvailHour,'down',f1):null],
-  ];
-  $('beforeAfterTable').innerHTML=`<thead><tr><th>Metric</th><th>Base<br>(n=${b.n})</th><th>After<br>(n=${a.n})</th><th>\u0394</th></tr></thead><tbody>`+
-    rows.map(r=>`<tr><td class="lab">${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td>${r[3]||'<td class="na">\u2014</td>'}</tr>`).join('')+`</tbody>`;
-}
-function st(k,v,note){return `<div class="stat"><div class="k">${k}</div><div class="v${v==='\u2014'?' dash':''}">${v}</div><div class="note">${note}</div></div>`;}
-function d(a,b,good,fmt){if(a==null||b==null||!Number.isFinite(a)||!Number.isFinite(b))return '<td class="na">\u2014</td>';
-  const diff=a-b, improved=good==='up'?diff>0:diff<0, cls=Math.abs(diff)<0.05?'':(improved?'up':'down');
-  return `<td class="${cls}">${diff>0?'+':''}${fmt(diff)}</td>`;}
-
-function renderLogs(){
-  const body=$('logsBody');
-  if(!logs.length){body.innerHTML=empty('No observations yet. Tap Add.');return;}
-  const sorted=[...logs].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-  body.innerHTML=sorted.map(r=>{const c=calc(r);const ok=c.status==='OK';
-    return `<div class="entry">
-      <div class="top"><span class="tag ${r.period==='Baseline'?'base':'after'}">${r.period}</span>
-        <span class="dt">${r.date||'no date'} \u00B7 ${(r.shift||'').replace('Shift ','')||'?'}</span>
-        ${r.locked?'<span class="lock">\u{1F512} locked</span>':''}
-        <span class="badge ${ok?'ok':'chk'}">${ok?'\u2713 balanced':'\u26A0 check'}</span></div>
-      <div class="met"><span>${f0(n(r.cases))} <b>cases</b></span><span>${f0(n(r.pallets))} <b>pallets</b></span>
-        <span>${c.available} <b>avail min</b></span>${!ok?`<span style="color:var(--red)">\u0394 ${f1(c.diff)} min</span>`:''}</div>
-      ${r.notes?`<div class="nt">${esc(r.notes.slice(0,120))}</div>`:''}
-      <div class="acts"><button onclick="editLog('${r.id}')">Edit</button>
-        ${r.locked?'':`<button class="del" onclick="deleteLog('${r.id}')">Delete</button>`}</div>
-    </div>`;}).join('');
-}
-function renderPareto(){
-  const period=$('paretoSeg').querySelector('button.on').dataset.v;
-  const a=aggregate(period), chart=$('paretoChart');
-  if(!a.pareto.length){chart.innerHTML=`<p class="muted small">No ${period} loss minutes logged yet.</p>`;return;}
-  const max=Math.max(...a.pareto.map(x=>x.minutes));
-  chart.innerHTML=a.pareto.map((x,i)=>{
-    const col=getComputedStyle(document.querySelector('.'+x.c.cls)).backgroundColor;
-    return `<div class="bar-row"><div class="bl"><span class="nm"><span class="rk">${i+1}</span>${x.c.name}</span>
-      <span class="mn">${f1(x.hr)} min/hr</span></div>
-      <div class="track"><div class="barfill" style="width:${x.minutes/max*100}%;background:${col}"></div></div></div>`;
-  }).join('');
-}
-function renderSavings(){
-  const s=Store.get(SAVINGS_KEY)||{};
-  ['laborRate','hoursSavedWeek','weeksYear','savingsType'].forEach(id=>{const el=$(id);
-    if(document.activeElement!==el)el.value=s[id]??(id==='weeksYear'?52:'');});
-  const annual=n(s.laborRate)*n(s.hoursSavedWeek)*n(s.weeksYear||52);
-  const a=aggregate('After');
-  $('savingsOutput').innerHTML=`
-    <div class="savings-box"><b>Annualized value:</b> $${annual.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
-    <div class="savings-box"><b>Classification:</b> ${esc(s.savingsType||'Soft capacity / productivity gain')}</div>
-    <div class="savings-box"><b>Evidence:</b> ${a.n>=2?`After logs entered (n=${a.n})`:'Not enough After logs yet \u2014 do not present savings as proven.'}</div>`;
-}
-function empty(m){return `<div class="empty"><div class="ic">\u{1F4CB}</div><p>${m}</p></div>`;}
-function render(){renderDash();renderLogs();renderPareto();renderSavings();}
-
-/* ---------------- export / import ---------------- */
-const COLS=[['Date','date'],['Shift','shift'],['Period','period'],['Total Window Min','totalWindowMin'],
-  ['Planned Break Min','plannedBreakMin'],['Cases','cases'],['Pallets','pallets'],['Active Pick Min','activePickMin'],
-  ['Observed Cases per Min','activeRateCpm'],['Pallet Swap Min','palletSwapMin'],['Restart Overrun Min','restartOverrunMin'],
-  ['Unclassified/Unlogged Gap Min','unclassifiedGapMin'],['Equipment Stop Min','equipmentStopMin'],
-  ['Input Stop Min','inputStopMin'],['Labor/Multitask Min','laborMultitaskMin'],['Notes','notes']];
-function exportableRows(mode='all'){
-  const source = mode==='after' ? logs.filter(r=>r.period==='After') : logs;
-  return source.map(r=>COLS.map(([,k])=>r[k]??''));
-}
-function toCSV(mode='all'){const q=v=>{v=String(v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
-  const data=exportableRows(mode);
-  return [COLS.map(c=>q(c[0])).join(','),...data.map(r=>r.map(q).join(','))].join('\n');}
-function toTSV(mode='all'){
-  const data=exportableRows(mode);
-  return [COLS.map(c=>c[0]).join('\t'),...data.map(r=>r.join('\t'))].join('\n');}
-function dl(name,text,type){const b=new Blob([text],{type});const u=URL.createObjectURL(b);
-  const a=document.createElement('a');a.href=u;a.download=name;a.click();URL.revokeObjectURL(u);}
-function afterCount(){return logs.filter(r=>r.period==='After').length;}
-
-/* ---------------- boot ---------------- */
 function boot(){
-  buildAlloc();
-  wireSeg('shiftSeg',v=>fShift=v);
-  wireSeg('periodSeg',v=>{fPeriod=v;updateMeter();});
-  ['totalWindowMin','plannedBreakMin','cases','pallets','activeRateCpm'].forEach(id=>$(id).addEventListener('input',updateMeter));
-  $('saveBtn').onclick=save;
-  $('cancelBtn').onclick=()=>{resetForm();setView('logs');};
-  document.querySelectorAll('.bottom-nav button').forEach(b=>b.onclick=()=>setView(b.dataset.view));
-  $('paretoSeg').querySelectorAll('button').forEach(b=>b.onclick=()=>{
-    $('paretoSeg').querySelectorAll('button').forEach(x=>x.classList.remove('on'));b.classList.add('on');renderPareto();});
-  $('copyAfterTSV').onclick=async()=>{
-    if(!afterCount())return toast('No After logs to copy yet');
-    try{await navigator.clipboard.writeText(toTSV('after'));toast('After logs copied — paste below the workbook baseline');}
-    catch(e){toast('Copy failed — use After CSV');}};
-  $('exportAfterCsvBtn').onclick=()=>{
-    if(!afterCount())return toast('No After logs to export yet');
-    dl(`aurora-dex-after-logs-${new Date().toISOString().slice(0,10)}.csv`,toCSV('after'),'text/csv');toast('After CSV downloaded');};
-  $('copyTSV').onclick=async()=>{
-    try{await navigator.clipboard.writeText(toTSV('all'));toast('Full table copied');}
-    catch(e){toast('Copy failed — use Full CSV');}};
-  $('exportCsvBtn').onclick=()=>{dl(`aurora-dex-full-logs-${new Date().toISOString().slice(0,10)}.csv`,toCSV('all'),'text/csv');toast('Full CSV downloaded');};
-  $('exportJsonBtn').onclick=()=>{dl(`aurora-dex-backup-${new Date().toISOString().slice(0,10)}.json`,
-    JSON.stringify({logs,savings:Store.get(SAVINGS_KEY)||{}},null,2),'application/json');toast('Backup downloaded');};
-  $('importJsonBtn').onclick=()=>{const f=$('importJsonFile').files[0];if(!f)return toast('Choose a JSON file first');
-    const rd=new FileReader();rd.onload=()=>{try{const d=JSON.parse(rd.result);
-      if(!Array.isArray(d.logs))throw new Error('no logs array');
-      logs=d.logs.some(r=>r.id===baselineRow.id)?d.logs:[baselineRow,...d.logs];saveLogs();
-      if(d.savings)Store.set(SAVINGS_KEY,d.savings);render();toast('Backup imported');
-    }catch(e){toast('Import failed: '+e.message);}};rd.readAsText(f);};
-
-  $('saveSavingsBtn').onclick=()=>{Store.set(SAVINGS_KEY,{
-    laborRate:n($('laborRate').value),hoursSavedWeek:n($('hoursSavedWeek').value),
-    weeksYear:n($('weeksYear').value||52),savingsType:$('savingsType').value});renderSavings();toast('Savings inputs saved');};
-
-  $('seedBtn').onclick=()=>{if(logs.some(r=>r.id===baselineRow.id))return toast('Baseline already loaded');
-    logs.unshift({...baselineRow});saveLogs();render();toast('6/10 baseline loaded');};
-  $('clearAfterBtn').onclick=()=>{if(confirm('Clear all After logs? Baseline stays.')){
-    logs=logs.filter(r=>r.period!=='After');saveLogs();render();toast('After logs cleared');}};
-  $('resetAllBtn').onclick=()=>{if(confirm('Reset to the 6/10 baseline only?')){
-    logs=[{...baselineRow}];Store.set(SAVINGS_KEY,{});saveLogs();render();toast('Reset to baseline');}};
-
-  window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferred=e;$('installBtn').classList.remove('hidden');});
-  $('installBtn').onclick=async()=>{if(!deferred)return;deferred.prompt();await deferred.userChoice;deferred=null;$('installBtn').classList.add('hidden');};
-  if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./service-worker.js').catch(()=>{}));
-
-  refreshCounts();resetForm();render();
+  buildLossInputs();
+  $('loginRole').addEventListener('change',()=>$('adminPwWrap').classList.toggle('hidden',$('loginRole').value!=='Admin'));
+  $('loginBtn').addEventListener('click',login);
+  document.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>go(b.dataset.go)));
+  document.querySelectorAll('.preset-row button').forEach(b=>b.addEventListener('click',()=>{ $('totalWindowMin').value=b.dataset.total; $('plannedBreakMin').value=b.dataset.break; document.querySelectorAll('.preset-row button').forEach(x=>x.classList.remove('selected')); b.classList.add('selected'); updateMeter(); }));
+  document.querySelectorAll('#periodButtons button').forEach(b=>b.addEventListener('click',()=>{setChoice('periodButtons',b.dataset.value); selectedPeriod=b.dataset.value; updateMeter();}));
+  ['logDate','logShift','totalWindowMin','plannedBreakMin','cases','pallets','activeRateCpm','notes'].forEach(id=>$(id).addEventListener('input',updateMeter));
+  $('addUnclassifiedBtn').addEventListener('click',addRemainderToUnclassified);
+  $('saveLogBtn').addEventListener('click',saveLog);
+  $('cancelEditBtn').addEventListener('click',resetForm);
+  document.querySelectorAll('#paretoPeriod button').forEach(b=>b.addEventListener('click',()=>{setChoice('paretoPeriod',b.dataset.value);renderPareto();}));
+  $('saveSavingsBtn').addEventListener('click',saveSavings);
+  $('copyAfterTsv').addEventListener('click',()=>copyTsv(true));
+  $('downloadAfterCsv').addEventListener('click',()=>downloadCsv(true));
+  $('downloadAllCsv').addEventListener('click',()=>downloadCsv(false));
+  $('downloadJson').addEventListener('click',downloadJson);
+  $('importJsonBtn').addEventListener('click',importJson);
+  $('unlockAdminBtn').addEventListener('click',unlockAdmin);
+  $('clearAfterBtn').addEventListener('click',()=>{if(confirm('Clear all After logs?')){logs=logs.filter(r=>r.period!=='After');saveLogs();toast('After logs cleared');}});
+  $('resetAllBtn').addEventListener('click',()=>{if(confirm('Reset to baseline only?')){logs=[baselineRow];localStorage.removeItem(SAVINGS_KEY);saveLogs();toast('Reset complete');}});
+  if('serviceWorker' in navigator)navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
+  resetForm();
+  if(user)enterApp(); else showPortal();
 }
-let toastT;function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2200);}
+
+function login(){
+  const name=$('loginName').value.trim(); const role=$('loginRole').value;
+  if(!name)return toast('Enter a name');
+  if(role==='Admin' && $('adminPassword').value!==ADMIN_PASSWORD)return toast('Admin password is incorrect');
+  user={name,role}; saveUser(); enterApp();
+}
+function logout(){user=null;localStorage.removeItem(USER_KEY);showPortal();}
+function showPortal(){$('portal').classList.remove('hidden');$('app').classList.add('hidden');}
+function enterApp(){
+  $('portal').classList.add('hidden');$('app').classList.remove('hidden');
+  $('userNameTop').textContent=user.name; $('userRoleTop').textContent=user.role; $('userInitials').textContent=initials(user.name);
+  renderNav(); renderTiles(); renderAll(); go('home');
+}
+function permissions(){return roleInfo[user?.role]||roleInfo['Warehouse Associate'];}
+function renderNav(){
+  const navItems=[['home','🏠','Home'],['entry','➕','Add'],['logs','📋','Logs'],['reports','📊','Reports'],['export','⬇️','Export'],['pareto','📈','Pareto'],['savings','💵','Savings'],['admin','⚙️','Admin']];
+  const allowed=permissions().views;
+  $('bottomNav').innerHTML=navItems.filter(x=>allowed.includes(x[0])).slice(0, user.role==='Warehouse Associate'?5:8).map(([id,ic,label])=>`<button data-view="${id}"><span class="nav-ic">${ic}</span>${label}</button>`).join('');
+  document.querySelectorAll('#bottomNav button').forEach(b=>b.addEventListener('click',()=>go(b.dataset.view)));
+}
+function go(view){
+  if(!permissions().views.includes(view)){toast('Your role does not have access to that area');return;}
+  if(view==='admin' && user.role!=='Admin'){toast('Admin role required');return;}
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  $('view-'+view).classList.add('active');
+  document.querySelectorAll('#bottomNav button').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
+  renderAll(); window.scrollTo({top:0,behavior:'smooth'});
+}
+function renderTiles(){
+  $('roleMessage').textContent=permissions().msg;
+  const items=[
+    {id:'entry',ic:'➕',title:'Add DEX Log',desc:'Enter an EX-10 observation quickly.',primary:true,roles:['Warehouse Associate','Warehouse Lead','Manager / Supervisor','Admin']},
+    {id:'work',ic:'✅',title:'Assigned Work',desc:'See the daily DEX tasks.',roles:['Warehouse Associate','Warehouse Lead','Manager / Supervisor','Admin']},
+    {id:'reports',ic:'📊',title:'Reports',desc:'Read the executive-safe numbers.',roles:['Warehouse Lead','Manager / Supervisor','Admin']},
+    {id:'pareto',ic:'📈',title:'Pareto',desc:'Find the top recurring loss.',roles:['Warehouse Lead','Manager / Supervisor','Admin']},
+    {id:'logs',ic:'📋',title:'Saved Logs',desc:'Review what has been entered.',roles:['Warehouse Associate','Warehouse Lead','Manager / Supervisor','Admin']},
+    {id:'savings',ic:'💵',title:'Savings Check',desc:'Separate hard savings from capacity.',roles:['Manager / Supervisor','Admin']},
+    {id:'export',ic:'⬇️',title:'Export',desc:'Send logs to Excel or backup.',roles:['Warehouse Associate','Warehouse Lead','Manager / Supervisor','Admin']},
+    {id:'admin',ic:'⚙️',title:'Admin',desc:'Manage system data and settings.',roles:['Admin']}
+  ];
+  $('tileGrid').innerHTML=items.map(it=>{const ok=it.roles.includes(user.role);return `<button class="tile ${it.primary?'primary-tile':''} ${!ok?'locked':''}" data-view="${ok?it.id:''}"><span class="ic">${it.ic}</span><div><h3>${it.title}</h3><p>${ok?it.desc:'Not available for this role'}</p></div></button>`}).join('');
+  document.querySelectorAll('.tile').forEach(t=>t.addEventListener('click',()=>t.dataset.view?go(t.dataset.view):toast('Not available for your role')));
+}
+function renderAll(){if(!user)return;renderWork();renderLogs();renderReports();renderPareto();renderSavings();}
+
+function buildLossInputs(){
+  $('lossBuckets').innerHTML=CATS.map(c=>`<div class="loss-row"><div class="sw ${c.cls}"></div><div><b>${c.icon} ${c.name}</b><small>${c.sub}</small></div><input id="${c.id}" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0"></div>`).join('');
+  CATS.forEach(c=>$(c.id).addEventListener('input',updateMeter));
+}
+function readForm(){const r={date:$('logDate').value,shift:$('logShift').value,period:selectedPeriod,totalWindowMin:n($('totalWindowMin').value),plannedBreakMin:n($('plannedBreakMin').value),cases:n($('cases').value),pallets:n($('pallets').value),activeRateCpm:n($('activeRateCpm').value),notes:$('notes').value,createdBy:user?.name||''};CATS.forEach(c=>r[c.id]=n($(c.id).value));return r;}
+function setChoice(containerId,value){const buttons=document.querySelectorAll('#'+containerId+' button');buttons.forEach(b=>b.classList.toggle('selected',b.dataset.value===value));}
+function updateMeter(){
+  const r=readForm(), c=calc(r); $('availableTime').textContent=c.available?c.available+' min':'—'; $('meterValue').textContent=`${Math.round(c.accounted*100)/100} / ${c.available} min`;
+  const base=Math.max(c.available,c.accounted,1); $('meterFill').style.width=Math.min(100,c.accounted/base*100)+'%';
+  const msg=$('meterMessage'), add=$('addUnclassifiedBtn'); msg.className='meter-message'; add.classList.add('hidden');
+  let canSave=false;
+  if(c.available<=0){msg.textContent='Enter the total window and planned break.';}
+  else if(Math.abs(c.diff)<=EPS){msg.textContent='Balanced — every minute is accounted for.'; msg.classList.add('ok'); canSave=true;}
+  else if(c.diff>EPS){msg.textContent=`${f1(c.diff)} min unaccounted. Add it to Unclassified or explain it.`; msg.classList.add('warn'); add.classList.remove('hidden'); canSave=true;}
+  else{msg.textContent=`${f1(Math.abs(c.diff))} min over available. Trim one bucket.`; msg.classList.add('over');}
+  $('saveLogBtn').disabled=!(canSave && r.cases>0 && r.totalWindowMin>0);
+}
+function addRemainderToUnclassified(){const c=calc(readForm());if(c.diff>0){$('unclassifiedGapMin').value=(n($('unclassifiedGapMin').value)+c.diff).toFixed(2).replace(/\.00$/,'');updateMeter();}}
+function saveLog(){const r=readForm();if(editId){const i=logs.findIndex(x=>x.id===editId);if(i>-1){const locked=logs[i].locked;logs[i]={...logs[i],...r,id:editId,locked};}}else{r.id='log-'+Date.now();logs.push(r);}saveLogs();toast(editId?'Observation updated':'Observation saved');resetForm();go('logs');}
+function resetForm(){editId=null;$('logDate').value=today();$('logShift').value='Shift 1';selectedPeriod='After';setChoice('periodButtons','After');['totalWindowMin','plannedBreakMin','cases','pallets','activeRateCpm','notes'].forEach(id=>$(id).value='');CATS.forEach(c=>$(c.id).value='');$('cancelEditBtn').classList.add('hidden');$('saveLogBtn').textContent='Save Observation';updateMeter();}
+function editLog(id){const r=logs.find(x=>x.id===id);if(!r)return;editId=id;$('logDate').value=r.date||today();$('logShift').value=r.shift||'Shift 1';selectedPeriod=r.period||'After';setChoice('periodButtons',selectedPeriod);['totalWindowMin','plannedBreakMin','cases','pallets','activeRateCpm','notes'].forEach(id=>$(id).value=r[id]??'');CATS.forEach(c=>$(c.id).value=r[c.id]??'');$('cancelEditBtn').classList.remove('hidden');$('saveLogBtn').textContent='Update Observation';updateMeter();go('entry');}
+function deleteLog(id){if(!permissions().canDelete){toast('Only Admin can delete records');return;}const r=logs.find(x=>x.id===id);if(r?.locked){toast('Baseline is locked');return;}if(confirm('Delete this log?')){logs=logs.filter(x=>x.id!==id);saveLogs();toast('Deleted');}}
+window.editLog=editLog; window.deleteLog=deleteLog;
+
+function renderWork(){const tasks=[['📥','Pull EX-10 Logs','Enter every available DEX log from 6/17 onward as After.'],['⏱️','Check restart overrun','Separate planned break from true restart delay.'],['🔄','Watch pallet swaps','Record swap time as its own bucket.'],['📦','Label bad pallets','Use BAD PALLET label so good pallets can keep routing to DEX.']];$('workList').innerHTML=tasks.map(t=>`<div class="task-card"><div class="box">${t[0]}</div><div><h3>${t[1]}</h3><p>${t[2]}</p></div></div>`).join('');}
+function renderLogs(){const canDelete=permissions().canDelete;if(!logs.length){$('logsBody').innerHTML='<div class="report-card">No logs yet.</div>';return;}$('logsBody').innerHTML=[...logs].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(r=>{const c=calc(r);return `<div class="log-card"><div class="log-top"><span class="tag ${r.period==='Baseline'?'base':'after'}">${r.period}</span><span class="tag ${c.status==='OK'?'status-ok':'status-check'}">${c.status==='OK'?'✓ Balanced':'⚠ Check'}</span><b>${esc(r.date)} · ${esc(r.shift)}</b>${r.locked?'<span class="micro">🔒 locked</span>':''}</div><div class="log-meta"><span>${f0(n(r.cases))} cases</span><span>${f0(n(r.pallets))} pallets</span><span>${f1(c.available)} avail min</span><span>Created by ${esc(r.createdBy||'—')}</span></div>${r.notes?`<p class="micro">${esc(r.notes)}</p>`:''}<div class="log-actions"><button onclick="editLog('${r.id}')">Edit</button>${canDelete&&!r.locked?`<button class="danger" onclick="deleteLog('${r.id}')">Delete</button>`:''}</div></div>`}).join('');}
+function renderReports(){const b=aggregate('Baseline'), a=aggregate('After');$('statusBanner').className='banner';$('statusBanner').innerHTML=a.n===0?'⚑ No After logs yet. Report process adoption, not a trend.':a.checkRows>0?`⚠ ${a.checkRows} After rows do not balance. Fix before presenting.`:a.n===1?'① One After window only. Snapshot, not a trend.':`✓ ${a.n} After windows ready. Top logged loss: <b>${a.pareto[0]?.c.name||'—'}</b>.`;const top=a.n?a:b;$('kpiGrid').innerHTML=[['Baseline windows','n='+b.n,'6/10 seeded'],['After windows','n='+a.n,a.n?'real logs entered':'waiting'],['Cases / available hr',f0(top.netCph),a.n?'After':'Baseline'],['Top logged loss',top.pareto[0]?.c.name||'—',a.n?'After':'Baseline']].map(k=>`<div class="kpi"><span>${k[0]}</span><b>${k[1]}</b><small>${k[2]}</small></div>`).join('');const rows=[['Cases / window',b.casesPerWindow,a.casesPerWindow,'up'],['Cases / available hr',b.netCph,a.netCph,'up'],['Pallets / window',b.palletsPerWindow,a.palletsPerWindow,'up'],['Active rate cases/min',b.activeRateCpm,a.activeRateCpm,'up'],['Loss / available hr',b.lossPerHour,a.lossPerHour,'down']];$('compareTable').innerHTML='<thead><tr><th>Metric</th><th>Base</th><th>After</th><th>Δ</th></tr></thead><tbody>'+rows.map(r=>cmpRow(r[0],r[1],a.n?r[2]:null,r[3])).join('')+'</tbody>';}
+function cmpRow(label,b,a,dir){let diff='—',cls='';if(a!=null&&b!=null){const d=a-b;const good=dir==='up'?d>0:d<0;cls=Math.abs(d)<.05?'':good?'up':'down';diff=(d>0?'+':'')+f1(d);}return `<tr><td>${label}</td><td>${f1(b)}</td><td>${a==null?'—':f1(a)}</td><td class="${cls}">${diff}</td></tr>`;}
+function renderPareto(){const period=document.querySelector('#paretoPeriod button.selected')?.dataset.value||'After';const a=aggregate(period);if(!a.pareto.length){$('paretoChart').innerHTML=`<p class="micro">No ${period} loss minutes logged yet.</p>`;return;}const max=Math.max(...a.pareto.map(x=>x.minutes));$('paretoChart').innerHTML=a.pareto.map((x,i)=>`<div class="pareto-row"><div class="pareto-line"><span>${i+1}. ${x.c.name}</span><span>${f1(x.hr)} min/hr</span></div><div class="bar"><div class="${x.c.cls}" style="width:${Math.max(2,x.minutes/max*100)}%"></div></div></div>`).join('');}
+function renderSavings(){const s=JSON.parse(localStorage.getItem(SAVINGS_KEY)||'{}');if(document.activeElement!==$('laborRate'))$('laborRate').value=s.laborRate??'';if(document.activeElement!==$('hoursSavedWeek'))$('hoursSavedWeek').value=s.hoursSavedWeek??'';if(document.activeElement!==$('weeksYear'))$('weeksYear').value=s.weeksYear??52;if(document.activeElement!==$('savingsType'))$('savingsType').value=s.savingsType??'Soft capacity / productivity gain';const annual=n(s.laborRate)*n(s.hoursSavedWeek)*n(s.weeksYear||52);const a=aggregate('After');$('savingsOutput').innerHTML=`<div><b>Annualized value:</b> $${f0(annual)}</div><div><b>Classification:</b> ${esc(s.savingsType||'Soft capacity / productivity gain')}</div><div><b>Evidence:</b> ${a.n>=2?'After logs entered (n='+a.n+')':'Not enough After logs yet — do not present savings as proven.'}</div>`;}
+function saveSavings(){const s={laborRate:n($('laborRate').value),hoursSavedWeek:n($('hoursSavedWeek').value),weeksYear:n($('weeksYear').value||52),savingsType:$('savingsType').value};localStorage.setItem(SAVINGS_KEY,JSON.stringify(s));renderSavings();toast('Savings inputs saved');}
+
+const COLS=[['Date','date'],['Shift','shift'],['Period','period'],['Total Window Min','totalWindowMin'],['Planned Break Min','plannedBreakMin'],['Cases','cases'],['Pallets','pallets'],['Active Pick Min','activePickMin'],['Observed Cases per Min','activeRateCpm'],['Pallet Swap Min','palletSwapMin'],['Restart Overrun Min','restartOverrunMin'],['Unclassified/Unlogged Gap Min','unclassifiedGapMin'],['Equipment Stop Min','equipmentStopMin'],['Input Stop Min','inputStopMin'],['Labor/Multitask Min','laborMultitaskMin'],['Created By','createdBy'],['Notes','notes']];
+function exportRows(afterOnly){return logs.filter(r=>!afterOnly||r.period==='After').map(r=>COLS.map(([,k])=>r[k]??''));}
+function toCsv(afterOnly){const q=v=>{v=String(v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};return [COLS.map(c=>q(c[0])).join(','),...exportRows(afterOnly).map(r=>r.map(q).join(','))].join('\n');}
+function toTsv(afterOnly){return [COLS.map(c=>c[0]).join('\t'),...exportRows(afterOnly).map(r=>r.join('\t'))].join('\n');}
+async function copyTsv(afterOnly){try{await navigator.clipboard.writeText(toTsv(afterOnly));toast('Copied for Excel');}catch{toast('Copy failed. Use CSV download.');}}
+function dl(name,text,type){const b=new Blob([text],{type});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=name;a.click();URL.revokeObjectURL(u);}
+function downloadCsv(afterOnly){dl(`aurora-dex-${afterOnly?'after':'all'}-${today()}.csv`,toCsv(afterOnly),'text/csv');toast('CSV downloaded');}
+function downloadJson(){dl(`aurora-dex-backup-${today()}.json`,JSON.stringify({logs,savings:JSON.parse(localStorage.getItem(SAVINGS_KEY)||'{}')},null,2),'application/json');toast('Backup downloaded');}
+function importJson(){const f=$('importJsonFile').files[0];if(!f)return toast('Choose JSON file');const r=new FileReader();r.onload=()=>{try{const data=JSON.parse(r.result);if(!Array.isArray(data.logs))throw new Error('No logs array');logs=data.logs.some(x=>x.id===baselineRow.id)?data.logs:[baselineRow,...data.logs];localStorage.setItem(STORAGE_KEY,JSON.stringify(logs));if(data.savings)localStorage.setItem(SAVINGS_KEY,JSON.stringify(data.savings));renderAll();toast('Backup imported');}catch(e){toast('Import failed: '+e.message);}};r.readAsText(f);}
+function unlockAdmin(){if($('adminEntryPassword').value===ADMIN_PASSWORD){adminUnlocked=true;$('adminLocked').classList.add('hidden');$('adminPanel').classList.remove('hidden');toast('Admin unlocked');}else toast('Incorrect admin password');}
+
 boot();
